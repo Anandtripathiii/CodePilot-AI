@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>CodePilot AI — coding mentor &amp; debugging assistant</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Serif:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+<a class="skip-link" href="#messageInput">Skip to the question box</a>
+
+<header class="masthead">
+  <button type="button" class="icon-btn masthead__menu" id="panelToggle"
+          aria-label="Show files and sources" aria-expanded="false">Files</button>
+
+  <div class="masthead__title">
+    <h1>CodePilot&nbsp;AI</h1>
+    <p class="masthead__sub">Coding mentor &amp; debugging assistant</p>
+  </div>
+
+  <div class="masthead__status">
+    <span class="stamps" id="providerStatus" aria-live="polite">
+      <span class="stamp stamp--muted" data-provider="gemini">Gemini</span>
+      <span class="stamp stamp--muted" data-provider="openai">OpenAI</span>
+    </span>
+    <button type="button" class="icon-btn" id="settingsBtn">API keys</button>
+  </div>
+</header>
+
+<main class="desk">
+
+  <!-- ============ LEFT: index cards (a drawer on phones) ============ -->
+  <div class="scrim" id="scrim" hidden></div>
+
+  <aside class="cards" id="cards" aria-label="Files, sources and history">
+
+    <button type="button" class="drawer-close" id="drawerClose" aria-label="Close panel">Close</button>
+
+    <section class="card">
+      <h2 class="card__title">Your code</h2>
+
+      <label class="dropzone" id="dropzone" for="fileInput">
+        <span class="dropzone__line">Drop a file here</span>
+        <span class="dropzone__hint">or click to browse — .py .js .java .cpp .html .sql and more</span>
+        <input type="file" id="fileInput" hidden>
+      </label>
+
+      <ul class="filelist" id="fileList" aria-live="polite"></ul>
+      <button type="button" class="link-btn" id="clearFilesBtn" hidden>Clear all files</button>
+    </section>
+
+    <section class="card">
+      <h2 class="card__title">Where answers come from</h2>
+
+      <label class="switch">
+        <input type="checkbox" id="useRag">
+        <span class="switch__box" aria-hidden="true"></span>
+        <span class="switch__text">
+          <strong>My uploaded files</strong>
+          <small>Searches your code before answering</small>
+        </span>
+      </label>
+
+      <label class="switch">
+        <input type="checkbox" id="useWeb">
+        <span class="switch__box" aria-hidden="true"></span>
+        <span class="switch__text">
+          <strong>Live documentation</strong>
+          <small>Looks up official docs on the web</small>
+        </span>
+      </label>
+    </section>
+
+    <section class="card">
+      <div class="card__head">
+        <h2 class="card__title">Earlier questions</h2>
+        <button type="button" class="link-btn" id="clearHistoryBtn">Clear</button>
+      </div>
+      <ul class="history" id="historyList"></ul>
+    </section>
+
+  </aside>
+
+  <!-- ============ RIGHT: the sheet ============ -->
+  <section class="sheet" aria-label="Conversation">
+
+    <div class="sheet__scroll" id="chatWindow">
+      <div class="empty" id="emptyState">
+        <p class="empty__lead">Ask anything about programming.</p>
+        <p class="empty__body">
+          Concepts, syntax, error messages, best practice — anything you would
+          ask a mentor.
+        </p>
+        <ul class="empty__examples">
+          <li><button type="button" class="example">What is the difference between a list and a tuple in Python?</button></li>
+          <li><button type="button" class="example">When should I use async/await instead of threads?</button></li>
+          <li><button type="button" class="example">Why does JavaScript say 0.1 + 0.2 is not 0.3?</button></li>
+        </ul>
+      </div>
+    </div>
+
+    <form class="composer" id="composer" autocomplete="off">
+      <div class="modes" role="radiogroup" aria-label="What should CodePilot do?">
+        <button type="button" class="mode is-active" data-mode="ask"      role="radio" aria-checked="true">Ask</button>
+        <button type="button" class="mode" data-mode="explain"  role="radio" aria-checked="false">Explain</button>
+        <button type="button" class="mode" data-mode="debug"    role="radio" aria-checked="false">Debug</button>
+        <button type="button" class="mode" data-mode="optimize" role="radio" aria-checked="false">Optimize</button>
+        <button type="button" class="mode" data-mode="generate" role="radio" aria-checked="false">Generate</button>
+      </div>
+
+      <textarea id="messageInput" class="composer__input" rows="3"
+        placeholder="Write your question, or paste your code and the error you got…"
+        aria-label="Your question"></textarea>
+
+      <div class="composer__row">
+        <div class="pickers">
+          <label class="picker">
+            <span>Model</span>
+            <select id="providerSelect">
+              <option value="gemini">Gemini</option>
+              <option value="openai">OpenAI</option>
+            </select>
+          </label>
+          <button type="button" class="ghost-btn" id="compareBtn"
+                  title="Send the same question to both models">Compare both</button>
+        </div>
+
+        <div class="composer__actions">
+          <span class="hint">Ctrl + Enter to send</span>
+          <button type="submit" class="send-btn" id="sendBtn">Send</button>
+        </div>
+      </div>
+    </form>
+
+  </section>
+</main>
+
+<footer class="footpage">
+  <span class="footpage__copy">
+    &copy; 2026 Anand Tripathi &middot; All rights reserved
+  </span>
+  <span class="footpage__mid" id="footStatus">Flask &middot; Gemini &middot; OpenAI &middot; FAISS</span>
+  <span class="footpage__meta">
+    CodePilot AI &middot; Licensed under the MIT License &middot; Python 3.14
+  </span>
+</footer>
+
+<!-- ============ Settings dialog ============ -->
+<dialog class="modal" id="settingsModal">
+  <form method="dialog" class="modal__inner" id="settingsForm">
+    <h2 class="modal__title">API keys</h2>
+    <p class="modal__note">
+      Saved to the <code>.env</code> file on this machine and applied straight
+      away — no restart needed. Leave a box blank to keep what is already there.
+    </p>
+
+    <div class="field">
+      <label for="geminiKey">Gemini key</label>
+      <div class="field__row">
+        <input type="password" id="geminiKey" placeholder="AQ.…"
+               autocomplete="off" spellcheck="false">
+        <button type="button" class="mini-btn reveal" data-target="geminiKey">Show</button>
+        <button type="button" class="mini-btn test" data-provider="gemini">Test</button>
+      </div>
+      <small id="geminiCurrent">not set</small>
+    </div>
+
+    <div class="field">
+      <label for="geminiModel">Gemini model</label>
+      <div class="field__row">
+        <input type="text" id="geminiModel" placeholder="gemini-3.6-flash"
+               autocomplete="off" spellcheck="false">
+      </div>
+      <small>Retired model IDs return a 404.
+        <a href="https://ai.google.dev/gemini-api/docs/models" target="_blank" rel="noopener">Current list</a>
+      </small>
+    </div>
+
+    <div class="field">
+      <label for="openaiKey">OpenAI key</label>
+      <div class="field__row">
+        <input type="password" id="openaiKey" placeholder="sk-…"
+               autocomplete="off" spellcheck="false">
+        <button type="button" class="mini-btn reveal" data-target="openaiKey">Show</button>
+        <button type="button" class="mini-btn test" data-provider="openai">Test</button>
+      </div>
+      <small id="openaiCurrent">not set</small>
+    </div>
+
+    <div class="field">
+      <label for="openaiModel">OpenAI model</label>
+      <div class="field__row">
+        <input type="text" id="openaiModel" placeholder="gpt-4o-mini"
+               autocomplete="off" spellcheck="false">
+      </div>
+    </div>
+
+    <p class="modal__result" id="testResult" hidden></p>
+
+    <div class="modal__actions">
+      <button type="button" class="ghost-btn" id="settingsCancel">Cancel</button>
+      <button type="button" class="send-btn" id="settingsSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="{{ url_for('static', filename='js/script.js') }}"></script>
+</body>
+</html>

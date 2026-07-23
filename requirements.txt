@@ -1,0 +1,24 @@
+# CodePilot AI — requires Python 3.14 or newer.
+#
+# This is the deployment set: no PyTorch, so it fits a 512 MB host.
+# Embeddings go through the Gemini API instead of a local model.
+# For fully offline embeddings, also install requirements-local.txt.
+
+# --- Web server ---
+Flask>=3.1
+python-dotenv>=1.0
+Werkzeug>=3.1
+gunicorn>=23.0
+
+# --- LLM providers (the two models) ---
+google-genai>=1.0
+openai>=1.40
+
+# --- RAG stack ---
+langchain-text-splitters>=0.2
+faiss-cpu>=1.8
+numpy>=1.26
+
+# --- Agent / web search ---
+ddgs>=9.0
+requests>=2.32

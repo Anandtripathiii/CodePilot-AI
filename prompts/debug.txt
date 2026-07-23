@@ -1,0 +1,7 @@
+TASK: Find and fix the bug.
+1. State the cause in one sentence.
+2. Point to the exact line or expression responsible.
+3. Give the corrected code.
+4. Say briefly how to confirm the fix — a test, an input, or what to print.
+If the code has more than one problem, handle the one causing the reported
+error first, then list the rest.

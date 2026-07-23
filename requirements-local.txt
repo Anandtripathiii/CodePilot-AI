@@ -1,0 +1,13 @@
+# Optional: run embeddings on your own machine instead of the Gemini API.
+#
+#   pip install -r requirements-local.txt
+#   then set EMBED_BACKEND=local in .env
+#
+# Warning: this pulls in PyTorch, roughly 2 GB installed. It will not fit
+# a free hosting tier — it is for local use only.
+
+-r requirements.txt
+sentence-transformers>=3.0
+
+# --- Testing ---
+pytest>=8.3

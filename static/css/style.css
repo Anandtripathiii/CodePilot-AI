@@ -1,0 +1,1003 @@
+/* =========================================================
+   CodePilot AI — style.css
+   One stylesheet. Sections, in order:
+
+     1. Tokens, reset, typography
+     2. App shell — masthead, desk, footer  (nothing scrolls but panes)
+     3. Panels — cards, drawer, stamps, switches
+     4. Composer — modes, input, buttons
+     5. Chat — messages, code blocks, sources, compare view
+     6. Settings dialog
+     7. Responsive
+   ========================================================= */
+
+
+/* =========================================================
+   1. TOKENS, RESET, TYPOGRAPHY
+   The app is meant to feel like a lab notebook: laid paper,
+   a red margin rule, faint blue lines, ink text.
+   ========================================================= */
+
+:root {
+  /* paper */
+  --paper:        #f3efe4;
+  --paper-card:   #fbf8f0;
+  --paper-edge:   #ded7c4;
+  --paper-shade:  #e8e2d2;
+
+  /* ink */
+  --ink:          #22262d;
+  --ink-soft:     #5f6672;
+  --ink-faint:    #8d939d;
+
+  /* rules and marks */
+  --rule-blue:    #c6d3e2;
+  --margin-red:   #c2635c;
+  --stamp:        #1d5f59;
+  --stamp-soft:   #d7e6e3;
+  --highlight:    #f4e29c;
+
+  /* type */
+  --serif: "IBM Plex Serif", Georgia, serif;
+  --mono:  "IBM Plex Mono", "SF Mono", Consolas, monospace;
+
+  --step-0: 0.9375rem;
+  --step-1: 1.0625rem;
+  --step-2: 1.375rem;
+  --step-3: 1.9rem;
+
+  /* geometry */
+  --margin-x: 3.25rem;        /* where the red rule sits */
+
+  /*
+    BASELINE GRID
+    Text sits ON the ruled lines rather than floating between them.
+    That only works if every line-height, margin and padding inside the
+    sheet is a multiple of --line-h. Change --line-h and the whole page
+    re-flows in step.
+
+    --rule-offset slides the printed lines up or down relative to the
+    text baseline. If the type floats a little high or low on your
+    machine, this is the one number to nudge.
+  */
+  --line-h:      28px;
+  --rule-offset: 21px;
+  --half-line:   14px;        /* --line-h / 2, for symmetric padding */
+  --shadow: 0 1px 0 var(--paper-edge), 0 6px 14px rgba(34, 38, 45, 0.07);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { height: 100%; }
+
+body {
+  /* The page itself never scrolls — only the panes inside it do.
+     100dvh (not vh) so mobile browser chrome does not crop the composer. */
+  height: 100dvh;
+  margin: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
+
+  font-family: var(--serif);
+  font-size: var(--step-0);
+  line-height: 1.6;
+  color: var(--ink);
+  background-color: var(--paper);
+  background-image:
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.014) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(0deg,  rgba(0,0,0,0.010) 0 1px, transparent 1px 4px);
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 600; line-height: 1.2; }
+
+p { margin: 0 0 0.75em; }
+p:last-child { margin-bottom: 0; }
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+a { color: var(--stamp); }
+
+code, pre, kbd { font-family: var(--mono); }
+
+:focus-visible { outline: 2px solid var(--stamp); outline-offset: 2px; }
+
+.skip-link { position: absolute; left: -999px; }
+.skip-link:focus {
+  left: 1rem; top: 1rem; z-index: 60;
+  background: var(--paper-card);
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ink);
+}
+
+/* shared scrollbar treatment for the panes that do scroll */
+.scrolls { overflow-y: auto; overscroll-behavior: contain; }
+.scrolls::-webkit-scrollbar { width: 10px; }
+.scrolls::-webkit-scrollbar-thumb {
+  background: var(--paper-shade);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+/* =========================================================
+   2. APP SHELL — masthead, desk, footer
+   ========================================================= */
+
+.masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 1.25rem;
+  border-bottom: 1px solid var(--paper-edge);
+  background: linear-gradient(180deg, rgba(255,255,255,0.55), transparent);
+}
+
+.masthead h1 {
+  font-family: var(--mono);
+  font-size: var(--step-3);
+  letter-spacing: -0.03em;
+}
+
+.masthead__sub {
+  margin: 0.1rem 0 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+}
+
+.masthead__status { display: flex; align-items: center; gap: 0.6rem; }
+.stamps { display: flex; gap: 0.4rem; }
+
+.masthead__menu { display: none; }   /* phones only */
+
+.icon-btn {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--paper-edge);
+  background: var(--paper-card);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.icon-btn:hover { border-color: var(--ink); color: var(--ink); }
+
+/* ---- desk: cards left, sheet right. Fills the middle grid row. ---- */
+.desk {
+  position: relative;
+  display: grid;
+  grid-template-columns: 19rem minmax(0, 1fr);
+  gap: 1.25rem;
+  min-height: 0;                 /* lets children scroll instead of stretching */
+  padding: 1.1rem 1.25rem;
+  width: 100%;
+  max-width: 84rem;
+  margin: 0 auto;
+}
+
+/* ---- footer: a thin bar, always visible, never scrolls ---- */
+.footpage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 1.25rem;
+  border-top: 1px solid var(--paper-edge);
+  background: linear-gradient(0deg, rgba(255,255,255,0.55), transparent);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+.footpage__copy { color: var(--ink-soft); }
+.footpage__mid  { color: var(--stamp); }
+.footpage__meta { color: var(--ink-faint); }
+
+/* ---- the sheet: a page of ruled paper ---- */
+.sheet {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--paper-card);
+  border: 1px solid var(--paper-edge);
+  box-shadow: var(--shadow);
+}
+
+/*
+  The ruled lines AND the red margin rule are both backgrounds of the
+  scrolling area, so they stop exactly where the conversation stops.
+  Previously the rule was on .sheet and ran down through the composer.
+*/
+.sheet__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--line-h) 1.75rem var(--line-h) calc(var(--margin-x) + 1.25rem);
+  line-height: var(--line-h);
+  background-image:
+    linear-gradient(90deg,
+      transparent 0 var(--margin-x),
+      var(--margin-red) var(--margin-x) calc(var(--margin-x) + 1px),
+      transparent calc(var(--margin-x) + 1px)),
+    repeating-linear-gradient(180deg,
+      transparent 0 calc(var(--line-h) - 1px),
+      var(--rule-blue) calc(var(--line-h) - 1px) var(--line-h));
+  background-position: 0 0, 0 var(--rule-offset);
+}
+
+/* Everything written directly on the paper shares the one rhythm. */
+.sheet__scroll p,
+.sheet__scroll li,
+.sheet__scroll button { line-height: var(--line-h); }
+.sheet__scroll::-webkit-scrollbar { width: 10px; }
+.sheet__scroll::-webkit-scrollbar-thumb {
+  background: var(--paper-shade);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+
+/* =========================================================
+   3. PANELS — cards, drawer, stamps, switches, history
+   ========================================================= */
+
+.cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.25rem;
+}
+.cards::-webkit-scrollbar { width: 10px; }
+.cards::-webkit-scrollbar-thumb {
+  background: var(--paper-shade);
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+.drawer-close { display: none; }
+.scrim { display: none; }
+
+.card {
+  background: var(--paper-card);
+  border: 1px solid var(--paper-edge);
+  box-shadow: var(--shadow);
+  padding: 0.9rem 1rem 1rem;
+  flex: none;
+}
+
+.card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.card__title {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin-bottom: 0.7rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--paper-shade);
+}
+.card__head .card__title { border: 0; margin-bottom: 0.5rem; padding-bottom: 0; }
+
+/* ---------- rubber stamp (provider status) ---------- */
+.stamp {
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--stamp);
+  color: var(--stamp);
+  background: var(--stamp-soft);
+  transform: rotate(-1.2deg);
+}
+.stamp--muted {
+  border-color: var(--ink-faint);
+  color: var(--ink-faint);
+  background: transparent;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* ---------- dropzone ---------- */
+.dropzone {
+  display: block;
+  text-align: center;
+  padding: 1rem 0.75rem;
+  border: 1px dashed var(--paper-edge);
+  background: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.dropzone:hover, .dropzone.is-over {
+  border-color: var(--stamp);
+  background: var(--stamp-soft);
+}
+.dropzone__line { display: block; font-family: var(--mono); font-size: 0.8125rem; }
+.dropzone__hint {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+  line-height: 1.4;
+}
+
+.ephemeral-note {
+  margin: 0.6rem 0 0;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--ink-soft);
+  background: var(--paper);
+  border-left: 2px solid var(--margin-red);
+}
+
+/* ---------- file list ---------- */
+.filelist { list-style: none; margin: 0.7rem 0 0; padding: 0; }
+.filelist li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px dotted var(--paper-shade);
+}
+.filelist li span:last-child { color: var(--ink-faint); white-space: nowrap; }
+
+.link-btn {
+  margin-top: 0.55rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--margin-red);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* ---------- switches ---------- */
+.switch {
+  display: flex;
+  gap: 0.6rem;
+  align-items: flex-start;
+  padding: 0.4rem 0;
+  cursor: pointer;
+}
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch__box {
+  flex: none;
+  width: 1rem; height: 1rem;
+  margin-top: 0.2rem;
+  border: 1px solid var(--ink-soft);
+  background: #fff;
+  position: relative;
+}
+.switch input:checked + .switch__box { border-color: var(--stamp); background: var(--stamp); }
+.switch input:checked + .switch__box::after {
+  content: "";
+  position: absolute;
+  left: 4px; top: 0;
+  width: 5px; height: 10px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(42deg);
+}
+.switch input:focus-visible + .switch__box { outline: 2px solid var(--stamp); outline-offset: 2px; }
+.switch__text strong { display: block; font-weight: 600; font-size: 0.86rem; }
+.switch__text small { display: block; color: var(--ink-faint); font-size: 0.72rem; line-height: 1.4; }
+
+/* ---------- history ----------
+   Capped so a long session cannot stretch the card down the whole
+   sidebar. Past the cap the list scrolls inside itself. */
+.history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 13rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.history::-webkit-scrollbar { width: 8px; }
+.history::-webkit-scrollbar-thumb {
+  background: var(--paper-shade);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+.history li + li { border-top: 1px dotted var(--paper-shade); }
+.history button {
+  width: 100%;
+  text-align: left;
+  padding: 0.35rem 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  /* one line per entry — the full text is in the tooltip */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.history button:hover { color: var(--ink); background: var(--highlight); }
+.history__mode {
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--margin-red);
+  display: block;
+  line-height: 1.3;
+}
+.history__empty { font-size: 0.8rem; color: var(--ink-faint); }
+
+
+/* =========================================================
+   4. COMPOSER
+   ========================================================= */
+
+.composer {
+  flex: none;
+  border-top: 1px solid var(--paper-edge);
+  padding: 0.75rem 1.1rem 0.9rem;
+  background: linear-gradient(180deg, rgba(255,255,255,0.6), transparent);
+}
+
+.modes { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-bottom: 0.6rem; }
+
+.mode {
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  letter-spacing: 0.05em;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--paper-edge);
+  background: var(--paper-card);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+  box-shadow: 1px 1px 0 var(--paper-edge);
+}
+.mode:hover { color: var(--ink); border-color: var(--ink-faint); }
+.mode.is-active {
+  color: var(--stamp);
+  border-color: var(--stamp);
+  background: var(--stamp-soft);
+  box-shadow: none;
+  transform: translate(1px, 1px);   /* pressed, like a stamp */
+}
+
+.composer__input {
+  width: 100%;
+  resize: vertical;
+  min-height: 4.25rem;
+  max-height: 40vh;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--paper-edge);
+  background: #fff;
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.composer__input::placeholder { color: var(--ink-faint); font-family: var(--serif); }
+
+.composer__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.pickers { display: flex; align-items: center; gap: 0.55rem; }
+.picker { display: flex; align-items: center; gap: 0.4rem; }
+.picker span {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.picker select {
+  border: 1px solid var(--paper-edge);
+  background: var(--paper-card);
+  padding: 0.25rem 0.4rem;
+  font-family: var(--mono);
+  font-size: 0.73rem;
+}
+
+.ghost-btn, .send-btn {
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  letter-spacing: 0.08em;
+  padding: 0.4rem 0.9rem;
+  cursor: pointer;
+  border: 1px solid var(--ink);
+}
+.ghost-btn { background: transparent; color: var(--ink); border-color: var(--paper-edge); }
+.ghost-btn:hover { border-color: var(--ink); }
+
+.send-btn {
+  background: var(--ink);
+  color: var(--paper-card);
+  text-transform: uppercase;
+  box-shadow: 2px 2px 0 var(--paper-edge);
+}
+.send-btn:hover { background: var(--stamp); border-color: var(--stamp); }
+.send-btn:active { transform: translate(2px, 2px); box-shadow: none; }
+.send-btn[disabled], .ghost-btn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+.composer__actions { display: flex; align-items: center; gap: 0.65rem; }
+.hint { font-size: 0.66rem; color: var(--ink-faint); font-family: var(--mono); }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed;
+  bottom: 2.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--paper-card);
+  padding: 0.55rem 1rem;
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  box-shadow: var(--shadow);
+  z-index: 50;
+  max-width: min(90vw, 34rem);
+}
+.toast--warn { background: var(--margin-red); }
+
+
+/* =========================================================
+   5. CHAT
+   ========================================================= */
+
+.empty { max-width: 34rem; }
+
+/* The one line of red ink on the page, matching the margin rule. */
+/*
+  The heading spans two ruled lines. The padding-top drops its baseline
+  onto a rule; the margin makes the total height 3 lines exactly, so
+  everything below stays in step.
+*/
+.empty__lead {
+  font-size: 1.85rem;
+  line-height: calc(var(--line-h) * 2);
+  padding-top: 9px;
+  margin-bottom: 19px;
+  font-style: italic;
+  color: var(--margin-red);
+}
+
+.empty__body {
+  color: var(--ink-soft);
+  font-size: var(--step-1);
+  margin-bottom: var(--line-h);
+}
+.empty__body em { color: var(--stamp); font-style: normal; font-family: var(--mono); font-size: 0.85em; }
+
+.empty__examples { list-style: none; margin: 0; padding: 0; }
+.example {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  /* an inset shadow, not a border — a border would add height off-grid */
+  box-shadow: inset 2px 0 0 var(--paper-shade);
+  padding: 0 0 0 0.7rem;
+  font-size: 0.86rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.example:hover { box-shadow: inset 2px 0 0 var(--margin-red); }
+.example:hover { color: var(--ink); background: var(--highlight); }
+
+.msg { margin-bottom: var(--line-h); }
+
+.msg__who {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 0;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.msg__tag {
+  color: var(--margin-red);
+  border: 1px solid currentColor;
+  padding: 0 0.3rem;
+  font-size: 0.6rem;
+}
+
+/* the question is handwriting-adjacent: italic serif, no box */
+.msg--you .msg__body {
+  font-style: italic;
+  font-size: var(--step-1);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* the answer is a card pasted onto the page */
+/*
+  Borders would add 1px top and bottom and knock the card off the grid,
+  so the outline is drawn with an inset shadow, which costs no height.
+  Padding of half a line top and bottom keeps the total a whole number
+  of lines.
+*/
+.msg--ai .msg__body {
+  background: #fff;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--paper-edge), 0 2px 6px rgba(34,38,45,0.06);
+  padding: var(--half-line) 1rem;
+}
+
+.msg--error .msg__body,
+.msg--blocked .msg__body {
+  box-shadow: inset 3px 0 0 var(--margin-red),
+              inset 0 0 0 1px var(--paper-edge),
+              0 2px 6px rgba(34,38,45,0.06);
+}
+.msg--blocked .msg__body { background: #fdf6f5; }
+
+.msg__body h1, .msg__body h2, .msg__body h3 {
+  font-size: var(--step-1);
+  line-height: var(--line-h);
+  margin: var(--line-h) 0 0;
+}
+.msg__body h1:first-child, .msg__body h2:first-child, .msg__body h3:first-child { margin-top: 0; }
+.msg__body p { margin: 0 0 var(--line-h); }
+.msg__body p:last-child { margin-bottom: 0; }
+.msg__body ul, .msg__body ol { margin: 0 0 var(--line-h); padding-left: 1.25rem; }
+.msg__body ul:last-child, .msg__body ol:last-child { margin-bottom: 0; }
+.msg__body li { margin: 0; line-height: var(--line-h); }
+.msg__body :not(pre) > code {
+  background: var(--stamp-soft);
+  padding: 0.05em 0.3em;
+  font-size: 0.85em;
+  border: 1px solid #cfe0dd;
+}
+
+.codeblock {
+  margin: var(--line-h) 0;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--paper-edge);
+  background: #fcfaf4;
+}
+.codeblock:last-child { margin-bottom: 0; }
+.codeblock__bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: var(--line-h);
+  padding: 0 0.5rem;
+  border: 0;
+  box-shadow: inset 0 -1px 0 var(--paper-edge);
+  background: var(--paper-shade);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.copy-btn {
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding: 0.1rem 0.35rem;
+}
+.copy-btn:hover { border-color: var(--ink-faint); color: var(--ink); }
+.codeblock pre {
+  margin: 0;
+  padding: var(--half-line) 0.8rem;
+  overflow-x: auto;
+  font-size: 0.78rem;
+  line-height: var(--line-h);
+  tab-size: 4;
+}
+
+.sources {
+  margin-top: var(--line-h);
+  padding-top: 0;
+  box-shadow: inset 0 1px 0 var(--paper-shade);
+  border: 0;
+  min-height: var(--line-h);
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 0.35rem;
+  row-gap: 0;              /* wrapped rows must stay a whole line apart */
+  align-items: center;
+}
+.sources__label {
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  line-height: var(--line-h);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+/*
+  These are flex items, so unlike inline elements their vertical padding
+  and borders really do add height. Fixed height + inset outline keeps
+  each row exactly one ruled line tall.
+*/
+.chip {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  height: var(--line-h);
+  line-height: var(--line-h);
+  padding: 0 0.4rem;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--paper-edge);
+  background: var(--paper);
+  color: var(--ink-soft);
+  text-decoration: none;
+  max-width: 18rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chip--web { box-shadow: inset 0 0 0 1px var(--stamp); color: var(--stamp); }
+.chip:hover { background: var(--highlight); }
+
+.thinking {
+  font-family: var(--mono);
+  font-size: 0.73rem;
+  color: var(--ink-faint);
+  letter-spacing: 0.08em;
+}
+.thinking::after { content: ""; animation: dots 1.2s steps(4, end) infinite; }
+@keyframes dots {
+  0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; }
+}
+
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem; }
+.compare__col {
+  background: #fff;
+  border: 0;
+  box-shadow: inset 0 0 0 1px var(--paper-edge), 0 2px 6px rgba(34,38,45,0.06);
+  padding: var(--half-line) 1rem;
+  min-width: 0;
+}
+.compare__name {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  line-height: var(--line-h);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--stamp);
+  box-shadow: inset 0 -1px 0 var(--paper-shade);
+  margin-bottom: 0;
+}
+.compare__error { color: var(--margin-red); font-size: 0.8rem; }
+
+
+/* =========================================================
+   6. SETTINGS DIALOG
+   ========================================================= */
+
+.modal {
+  border: 1px solid var(--ink);
+  background: var(--paper-card);
+  box-shadow: 0 18px 40px rgba(34,38,45,0.28);
+  padding: 0;
+  width: min(94vw, 30rem);
+  color: var(--ink);
+}
+.modal::backdrop { background: rgba(34, 38, 45, 0.45); }
+
+.modal__inner { padding: 1.25rem 1.4rem 1.4rem; }
+
+.modal__title {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--paper-shade);
+  margin-bottom: 0.8rem;
+}
+
+.modal__note {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin-bottom: 1rem;
+}
+.modal__note code { font-size: 0.9em; background: var(--stamp-soft); padding: 0 0.25em; }
+
+.field { display: block; margin-bottom: 0.9rem; }
+.field > label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 0.25rem;
+}
+.field__row { display: flex; gap: 0.3rem; }
+.field input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--paper-edge);
+  background: #fff;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+
+/* Show / Test buttons sitting alongside a key field */
+.mini-btn {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0 0.55rem;
+  border: 1px solid var(--paper-edge);
+  background: var(--paper);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.mini-btn:hover { border-color: var(--ink); color: var(--ink); }
+.mini-btn[disabled] { opacity: 0.5; cursor: progress; }
+.mini-btn.test { border-color: var(--stamp); color: var(--stamp); }
+
+/* Result line under the fields after a Test */
+.modal__result {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  line-height: 1.5;
+  padding: 0.45rem 0.6rem;
+  margin: 0 0 0.4rem;
+  border-left: 3px solid var(--ink-faint);
+  background: var(--paper);
+  word-break: break-word;
+}
+.modal__result[hidden] { display: none; }
+.modal__result.is-ok   { border-left-color: var(--stamp); color: var(--stamp); }
+.modal__result.is-bad  { border-left-color: var(--margin-red); color: var(--margin-red); }
+.field small {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+}
+
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--paper-shade);
+}
+
+
+/* =========================================================
+   7. RESPONSIVE
+   The shell stays full-height at every size. What changes is
+   that the cards become a slide-in drawer below 1000px.
+   ========================================================= */
+
+@media (max-width: 1000px) {
+  .desk {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0.75rem;
+    gap: 0;
+  }
+
+  .masthead__menu { display: block; }
+  .masthead__sub { display: none; }
+
+  /* cards become an off-canvas drawer */
+  .cards {
+    position: fixed;
+    z-index: 45;
+    top: 0; bottom: 0; left: 0;
+    width: min(20rem, 86vw);
+    padding: 1rem 0.9rem;
+    background: var(--paper);
+    border-right: 1px solid var(--paper-edge);
+    box-shadow: 6px 0 24px rgba(34,38,45,0.16);
+    transform: translateX(-102%);
+    transition: transform 0.22s ease;
+  }
+  .cards.is-open { transform: translateX(0); }
+
+  .drawer-close {
+    display: block;
+    align-self: flex-end;
+    flex: none;
+    font-family: var(--mono);
+    font-size: 0.66rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 0.3rem 0.55rem;
+    border: 1px solid var(--paper-edge);
+    background: var(--paper-card);
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(34, 38, 45, 0.4);
+  }
+  .scrim[hidden] { display: none; }
+
+  .compare { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  :root { --margin-x: 1.6rem; --step-3: 1.4rem; }
+
+  .masthead { padding: 0.55rem 0.75rem; gap: 0.5rem; }
+  .masthead__status .stamps { display: none; }   /* footer carries status instead */
+
+  .desk { padding: 0.5rem; }
+
+  .sheet__scroll { padding: 1rem 0.9rem 1rem calc(var(--margin-x) + 0.75rem); }
+
+  .empty__lead { font-size: 1.45rem; padding-top: 13px; margin-bottom: 15px; }
+  .empty__body { font-size: var(--step-0); }
+
+  .composer { padding: 0.6rem 0.7rem 0.7rem; }
+  .composer__row { flex-direction: column; align-items: stretch; }
+  .pickers { justify-content: space-between; }
+  .composer__actions { justify-content: space-between; }
+  .hint { display: none; }
+  .send-btn { flex: 1; }
+  .modes { gap: 0.28rem; }
+  .mode { flex: 1 0 auto; text-align: center; padding: 0.3rem 0.4rem; }
+
+  /* iOS zooms any input under 16px on focus, which breaks the layout */
+  .composer__input, .field input { font-size: 16px; }
+
+  .footpage {
+    font-size: 0.58rem;
+    padding: 0.4rem 0.7rem;
+    gap: 0.6rem;
+  }
+  /* the copyright stays; the tech credits are the first thing to go */
+  .footpage__meta { display: none; }
+}

@@ -1,0 +1,19 @@
+.env
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+env/
+uploads/*
+!uploads/.gitkeep
+data/*
+!data/.gitkeep
+.faiss_index/
+*.log
+.DS_Store
+.pytest_cache/
+.idea/
+.vscode/
+
+# deployment
+*.zip

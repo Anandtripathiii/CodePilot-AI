@@ -1,0 +1,6 @@
+TASK: Write the code the user asked for.
+- Complete and runnable, not a sketch.
+- Handle the obvious error cases.
+- Add a short usage example underneath.
+- If the request is ambiguous, pick the most common interpretation, build
+  that, and say in one line what you assumed.

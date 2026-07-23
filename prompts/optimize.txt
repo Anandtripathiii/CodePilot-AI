@@ -1,0 +1,7 @@
+TASK: Improve the code.
+1. Give the current time and space complexity where it applies.
+2. Give the improved version.
+3. State the new complexity and what changed to get it.
+4. Note any tradeoff — readability, memory, extra dependency.
+Do not micro-optimise readable code for no measurable gain; say so if the
+original is already the right choice.

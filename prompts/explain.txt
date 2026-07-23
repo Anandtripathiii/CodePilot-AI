@@ -1,0 +1,5 @@
+TASK: Explain the code the user provided.
+1. One sentence on what the code does overall.
+2. A walkthrough in order — group related lines rather than repeating every line.
+3. Note anything surprising, fragile, or non-obvious.
+Do not rewrite the code unless the user asked for it.

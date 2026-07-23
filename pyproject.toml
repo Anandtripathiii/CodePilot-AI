@@ -1,0 +1,24 @@
+[project]
+name = "codepilot-ai"
+version = "1.0.0"
+description = "Intelligent coding mentor and debugging assistant"
+requires-python = ">=3.14"
+readme = "README.md"
+
+dependencies = [
+    "Flask>=3.1",
+    "python-dotenv>=1.0",
+    "openai>=1.40",
+    "google-genai>=1.0",
+    "langchain-text-splitters>=0.2",
+    "faiss-cpu>=1.8",
+    "sentence-transformers>=3.0",
+    "numpy>=1.26",
+    "ddgs>=9.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
