@@ -64,41 +64,6 @@ def read_text_file(path: Path | str) -> str:
 
 
 # --------------------------------------------------------------------------
-# .env writing — lets the settings panel save keys without a text editor
-# --------------------------------------------------------------------------
-def update_env(updates: dict[str, str], path: Path) -> None:
-    """Rewrite matching KEY=value lines in place, appending any that are new.
-
-    Comments, blank lines and ordering are preserved, so the file stays
-    readable after the UI has written to it.
-    """
-    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
-    written: set[str] = set()
-    out: list[str] = []
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#") and "=" in stripped:
-            key = stripped.split("=", 1)[0].strip()
-            if key in updates:
-                out.append(f"{key}={updates[key]}")
-                written.add(key)
-                continue
-        out.append(line)
-
-    out.extend(f"{key}={value}" for key, value in updates.items() if key not in written)
-    path.write_text("\n".join(out).rstrip("\n") + "\n", encoding="utf-8")
-
-
-def mask_key(value: str) -> str:
-    """Show enough of a key to recognise it, never enough to use it."""
-    value = value.strip()
-    if not value:
-        return ""
-    return f"{value[:4]}…{value[-4:]}" if len(value) > 12 else "set"
-
-
-# --------------------------------------------------------------------------
 # Prompts — one text file per mode, loaded once and cached
 # --------------------------------------------------------------------------
 _cache: dict[str, str] = {}

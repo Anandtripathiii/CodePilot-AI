@@ -1,3 +1,30 @@
+  API.health().then((data) => {
+    Settings.setServerProviders(data.providers);
+    Settings.refreshStamps();
+    Upload.renderFiles(data.indexed_files || []);
+
+    // Serverless hosts have no persistent disk, so say so rather than
+    // letting files quietly disappear between requests.
+    if (data.ephemeral) {
+      const note = document.createElement("p");
+      note.className = "ephemeral-note";
+      note.textContent =
+        "Uploaded files and history are temporary on this deployment and " +
+        "reset when the server sleeps.";
+      $("#dropzone").insertAdjacentElement("afterend", note);
+    }
+
+    // Nobody can use the app without a key somewhere, so ask up front.
+    const usable = Settings.providerState(data.providers);
+    if (!usable.gemini && !usable.openai) {
+      UI.toast("Add your API key to get started — it stays in this browser.");
+      Settings.open();
+    }
+  }).catch(() => {
+    UI.toast("Could not reach the server. Is it still running?", "warn");
+  });
+
+  UI.renderEmptyState(state.mode);
 /* =========================================================
    CodePilot AI — script.js
    One file. Sections, in order:
@@ -41,12 +68,43 @@ const API = (() => {
     return data;
   }
 
-  // Held in memory only, for this tab, for as long as the page is open.
-  let adminPassword = "";
-  const setAdminPassword = (value) => { adminPassword = value || ""; };
+  /*
+    Keys are kept in this browser and nowhere else. They are sent with each
+    request so the server can call Google or OpenAI on your behalf, and it
+    stores nothing — close the tab and the server has no record of them.
+  */
+  const STORE_KEY = "codepilot.keys";
 
-  const headers = (extra = {}) =>
-    adminPassword ? { ...extra, "X-Admin-Password": adminPassword } : extra;
+  function loadKeys() {
+    try {
+      return JSON.parse(localStorage.getItem(STORE_KEY)) || {};
+    } catch (err) {
+      return {};
+    }
+  }
+
+  function saveKeys(keys) {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(keys));
+      return true;
+    } catch (err) {
+      return false;   // private browsing, or storage disabled
+    }
+  }
+
+  function clearKeys() {
+    try { localStorage.removeItem(STORE_KEY); } catch (err) { /* nothing to do */ }
+  }
+
+  function headers(extra = {}) {
+    const keys = loadKeys();
+    const out = { ...extra };
+    if (keys.gemini_key)   out["X-Gemini-Key"]   = keys.gemini_key;
+    if (keys.openai_key)   out["X-OpenAI-Key"]   = keys.openai_key;
+    if (keys.gemini_model) out["X-Gemini-Model"] = keys.gemini_model;
+    if (keys.openai_model) out["X-OpenAI-Model"] = keys.openai_model;
+    return out;
+  }
 
   const json = (body) => ({
     method: "POST",
@@ -58,18 +116,16 @@ const API = (() => {
     health:   ()      => request("/api/health"),
     chat:     (body)  => request("/api/chat", json(body)),
     compare:  (body)  => request("/api/compare", json(body)),
+    loadKeys, saveKeys, clearKeys,
     upload:   (file)  => {
       const form = new FormData();
       form.append("file", file);
-      return request("/api/upload", { method: "POST", body: form });
+      return request("/api/upload", { method: "POST", body: form, headers: headers() });
     },
     clearIndex:   () => request("/api/clear-index", { method: "POST" }),
-    getSettings:  () => request("/api/settings", { headers: headers() }),
-    saveSettings: (body) => request("/api/settings", json(body)),
     testKey:      (body) => request("/api/test-key", json(body)),
     history:      () => request("/api/history"),
     clearHistory: () => request("/api/history", { method: "DELETE" }),
-    setAdminPassword,
   };
 })();
 
@@ -689,36 +745,39 @@ const Settings = (() => {
 
   const dialog = () => $("#settingsModal");
 
-  let adminRequired = false;
-  const setAdminRequired = (value) => { adminRequired = value; };
+  function mask(value) {
+    if (!value) return "not set";
+    return value.length > 12
+      ? `saved — ${value.slice(0, 4)}…${value.slice(-4)}`
+      : "saved";
+  }
 
-  async function open() {
-    if (adminRequired) {
-      const entered = window.prompt(
-        "Admin password (set as ADMIN_PASSWORD on the host):"
-      );
-      if (entered === null) return;          // cancelled
-      API.setAdminPassword(entered);
-    }
+  /* Which providers can this browser actually use? Either the visitor has
+     pasted a key, or the server was deployed with one of its own. */
+  function providerState(serverProviders = {}) {
+    const keys = API.loadKeys();
+    return {
+      gemini: Boolean(keys.gemini_key) || Boolean(serverProviders.gemini),
+      openai: Boolean(keys.openai_key) || Boolean(serverProviders.openai),
+    };
+  }
 
-    try {
-      const data = await API.getSettings();
-      $("#geminiModel").value = data.gemini_model || "";
-      $("#openaiModel").value = data.openai_model || "";
-      $("#geminiCurrent").textContent = data.gemini_key
-        ? `currently ${data.gemini_key}`
-        : "not set";
-      $("#openaiCurrent").textContent = data.openai_key
-        ? `currently ${data.openai_key}`
-        : "not set";
-    } catch (err) {
-      UI.toast(err.message, "warn");
-      if (adminRequired) API.setAdminPassword("");   // let them retry
-      return;
-    }
+  let serverProviders = {};
+  const setServerProviders = (value) => { serverProviders = value || {}; };
+
+  function refreshStamps() {
+    UI.applyProviders(providerState(serverProviders));
+  }
+
+  function open() {
+    const keys = API.loadKeys();
 
     $("#geminiKey").value = "";
     $("#openaiKey").value = "";
+    $("#geminiModel").value = keys.gemini_model || "";
+    $("#openaiModel").value = keys.openai_model || "";
+    $("#geminiCurrent").textContent = mask(keys.gemini_key);
+    $("#openaiCurrent").textContent = mask(keys.openai_key);
     $("#testResult").hidden = true;
 
     // never leave a key visible from a previous visit
@@ -735,27 +794,41 @@ const Settings = (() => {
     dialog().close();
   }
 
-  async function save() {
-    const payload = {
-      gemini_key:   $("#geminiKey").value.trim(),
-      openai_key:   $("#openaiKey").value.trim(),
-      gemini_model: $("#geminiModel").value.trim(),
-      openai_model: $("#openaiModel").value.trim(),
+  /* Blank key boxes mean "leave what is already saved", so a visitor can
+     change just the model without re-pasting their key. */
+  function collect() {
+    const keys = API.loadKeys();
+    return {
+      gemini_key:   $("#geminiKey").value.trim()   || keys.gemini_key   || "",
+      openai_key:   $("#openaiKey").value.trim()   || keys.openai_key   || "",
+      gemini_model: $("#geminiModel").value.trim() || "",
+      openai_model: $("#openaiModel").value.trim() || "",
     };
+  }
 
-    if (!Object.values(payload).some(Boolean)) {
-      UI.toast("Nothing to save — every box was blank.", "warn");
+  function save() {
+    const keys = collect();
+
+    if (!keys.gemini_key && !keys.openai_key) {
+      UI.toast("Paste at least one key first.", "warn");
       return;
     }
 
-    try {
-      const data = await API.saveSettings(payload);
-      UI.applyProviders(data.providers);
-      close();
-      UI.toast("Saved. The new settings are active now.");
-    } catch (err) {
-      UI.toast(err.message, "warn");
+    if (!API.saveKeys(keys)) {
+      UI.toast("This browser is blocking storage — try a normal window.", "warn");
+      return;
     }
+
+    refreshStamps();
+    close();
+    UI.toast("Saved in this browser. Ready to use.");
+  }
+
+  function forget() {
+    API.clearKeys();
+    refreshStamps();
+    open();
+    UI.toast("Keys removed from this browser.");
   }
 
   /* Show / Hide — lets you check what you actually pasted. */
@@ -776,30 +849,20 @@ const Settings = (() => {
   /* Makes one real call so you know the key works, not just that it saved. */
   async function test(button) {
     const provider = button.dataset.provider;
-    const field = provider === "gemini" ? "#geminiKey" : "#openaiKey";
-    const modelField = provider === "gemini" ? "#geminiModel" : "#openaiModel";
 
     button.disabled = true;
     button.textContent = "…";
     showResult("Contacting the provider…", "");
 
-    try {
-      // Anything typed but not yet saved is saved first, so the test
-      // checks what is on screen rather than what was there before.
-      const typedKey = $(field).value.trim();
-      const typedModel = $(modelField).value.trim();
-      if (typedKey || typedModel) {
-        await API.saveSettings({
-          [`${provider}_key`]: typedKey,
-          [`${provider}_model`]: typedModel,
-        });
-      }
+    // Save first so the request carries what is on screen.
+    const keys = collect();
+    if (keys.gemini_key || keys.openai_key) API.saveKeys(keys);
 
+    try {
       const data = await API.testKey({ provider });
       if (data.ok) {
         showResult(`Working — ${data.label} replied using ${data.model}.`, "is-ok");
-        const health = await API.getSettings();
-        UI.applyProviders(health.providers);
+        refreshStamps();
       } else {
         showResult(data.error, "is-bad");
       }
@@ -815,6 +878,7 @@ const Settings = (() => {
     $("#settingsBtn").addEventListener("click", open);
     $("#settingsCancel").addEventListener("click", close);
     $("#settingsSave").addEventListener("click", save);
+    $("#settingsForget").addEventListener("click", forget);
 
     $("#settingsForm").addEventListener("click", (event) => {
       const reveal = event.target.closest(".reveal");
@@ -825,7 +889,7 @@ const Settings = (() => {
     });
   }
 
-  return { wire, open, setAdminRequired };
+  return { wire, open, setServerProviders, refreshStamps, providerState };
 })();
 
 

@@ -1,7 +1,13 @@
 """The contract every LLM wrapper implements.
 
-Each model returns the same shape so app.py never needs to know which
-provider it is talking to.
+A wrapper can be built two ways:
+
+    GeminiModel()                     -> uses the server's own key, if set
+    GeminiModel(key, "model-name")    -> uses a key supplied by a visitor
+
+The second form is what makes "bring your own key" work: nothing is stored
+on the server, the key lives in the visitor's browser and is used for the
+length of one request.
 """
 
 from typing import TypedDict
@@ -20,7 +26,7 @@ class BaseModel:
 
     @property
     def available(self) -> bool:
-        """True when an API key is present and the client loaded."""
+        """True when a key is present and the client loaded."""
         return False
 
     def generate(self, prompt: str) -> Reply:

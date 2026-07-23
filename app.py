@@ -7,7 +7,6 @@ The real work lives in rag.py, agent.py, safety.py, utils.py and models/.
 """
 
 import os
-import secrets
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Final
@@ -35,37 +34,16 @@ from utils import (
     History,
     build_prompt,
     is_allowed_file,
-    mask_key,
     new_id,
     read_text_file,
     storage_dir,
-    update_env,
 )
 
 BASE_DIR: Final[Path] = Path(__file__).resolve().parent
 UPLOAD_DIR: Final[Path] = storage_dir("uploads")
 MAX_UPLOAD_MB: Final[int] = 5
 
-#
-# Two modes. Locally the settings panel may write .env, because the only
-# person who can reach 127.0.0.1 is you. On a public deployment that route
-# would let any visitor overwrite your API keys, so it is off unless you
-# deliberately switch it on.
-#
 IS_PRODUCTION: Final[bool] = os.getenv("FLASK_ENV", "development") == "production"
-
-# Set ADMIN_PASSWORD to use the key editor on a live site. Without one the
-# editor stays shut in production, because an unprotected route that writes
-# .env would let any visitor take over your API keys.
-ADMIN_PASSWORD: Final[str] = os.getenv("ADMIN_PASSWORD", "").strip()
-
-ALLOW_KEY_EDITING: Final[bool] = os.getenv(
-    "ALLOW_KEY_EDITING",
-    "1" if (not IS_PRODUCTION or ADMIN_PASSWORD) else "0",
-) == "1"
-
-# Locally there is nothing to protect — only you can reach 127.0.0.1.
-REQUIRE_ADMIN: Final[bool] = IS_PRODUCTION and ALLOW_KEY_EDITING
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
@@ -88,11 +66,42 @@ MODELS: dict[str, BaseModel] = {}
 
 
 def reload_models() -> None:
+    """The server's own models, from environment variables. Optional —
+    the app works with no server keys at all if visitors bring their own."""
     MODELS["gemini"] = GeminiModel()
     MODELS["openai"] = OpenAIModel()
 
 
 reload_models()
+
+KEY_HEADERS: Final[dict[str, tuple[str, str]]] = {
+    "gemini": ("X-Gemini-Key", "X-Gemini-Model"),
+    "openai": ("X-OpenAI-Key", "X-OpenAI-Model"),
+}
+BUILDERS: Final[dict[str, type[BaseModel]]] = {
+    "gemini": GeminiModel,
+    "openai": OpenAIModel,
+}
+
+
+def request_models() -> dict[str, BaseModel]:
+    """The models to use for this one request.
+
+    A visitor's key arrives as a header, is used for the length of the
+    request and is never written down. If they did not send one, the
+    server's own key is used instead — if it has one.
+    """
+    resolved: dict[str, BaseModel] = {}
+    for name, (key_header, model_header) in KEY_HEADERS.items():
+        key = request.headers.get(key_header, "").strip()
+        model = request.headers.get(model_header, "").strip()
+        if key:
+            resolved[name] = BUILDERS[name](key, model)
+        elif model and MODELS[name].available:
+            resolved[name] = BUILDERS[name]("", model)
+        else:
+            resolved[name] = MODELS[name]
+    return resolved
 
 history = History(storage_dir("data") / "history.json")
 
@@ -115,8 +124,6 @@ def health() -> Response:
         providers={name: model.available for name, model in MODELS.items()},
         index_ready=rag.has_index(),
         indexed_files=rag.list_files(),
-        key_editing=ALLOW_KEY_EDITING,
-        admin_required=REQUIRE_ADMIN,
         ephemeral=IS_SERVERLESS,
     )
 
@@ -160,7 +167,8 @@ def chat() -> tuple[Response, int] | Response:
             ]
 
     prompt = build_prompt(mode, verdict.cleaned_prompt, "\n\n".join(context_parts))
-    model = MODELS.get(provider, MODELS[DEFAULT_PROVIDER])
+    models = request_models()
+    model = models.get(provider, models[DEFAULT_PROVIDER])
     reply = model.generate(prompt)
 
     if reply["error"]:
@@ -201,17 +209,18 @@ def compare() -> tuple[Response, int] | Response:
     # Sequentially this route takes as long as both replies added together,
     # which is the difference between fitting a 10 second serverless
     # timeout and not.
-    with ThreadPoolExecutor(max_workers=len(MODELS)) as pool:
+    models = request_models()
+    with ThreadPoolExecutor(max_workers=len(models)) as pool:
         futures = {
             name: pool.submit(model.generate, prompt)
-            for name, model in MODELS.items()
+            for name, model in models.items()
         }
         replies = {name: future.result() for name, future in futures.items()}
 
     results: dict[str, dict[str, str | None]] = {}
     for name, reply in replies.items():
         results[name] = {
-            "label": MODELS[name].label,
+            "label": models[name].label,
             "text": "" if reply["error"] else check_response(reply["text"]),
             "error": reply["error"],
         }
@@ -261,97 +270,22 @@ def clear_index() -> Response:
 
 
 # --------------------------------------------------------------------------
-# Settings — lets the browser save API keys instead of editing .env by hand
+# Key check
 #
-# This writes to .env on the machine running the server. That is safe for
-# local use, which is what this app is for. Do not expose this route on a
-# public deployment without adding authentication first.
+# There is deliberately no route that saves keys. Visitors keep their own
+# key in their own browser and send it with each request, so the server has
+# nothing worth stealing and no one can overwrite anyone else's settings.
 # --------------------------------------------------------------------------
-ENV_FIELDS: Final[dict[str, str]] = {
-    "gemini_key": "GEMINI_API_KEY",
-    "openai_key": "OPENAI_API_KEY",
-    "gemini_model": "GEMINI_MODEL",
-    "openai_model": "OPENAI_MODEL",
-}
-
-
-def _key_guard() -> tuple[Response, int] | None:
-    """None when the caller may edit keys, otherwise the refusal to send."""
-    if not ALLOW_KEY_EDITING:
-        return jsonify(
-            error=(
-                "Editing keys from the browser is switched off here. Set "
-                "ADMIN_PASSWORD on the host to turn it on."
-            )
-        ), 403
-
-    if REQUIRE_ADMIN:
-        given = request.headers.get("X-Admin-Password", "")
-        # compare_digest so a wrong guess takes the same time as a right one
-        if not (given and secrets.compare_digest(given, ADMIN_PASSWORD)):
-            return jsonify(error="Wrong admin password."), 401
-
-    return None
-
-
-@app.get("/api/settings")
-def get_settings() -> tuple[Response, int] | Response:
-    if (refusal := _key_guard()) is not None:
-        return refusal
-    """Current state. Keys come back masked — never in full."""
-    return jsonify(
-        gemini_key=mask_key(os.getenv("GEMINI_API_KEY", "")),
-        openai_key=mask_key(os.getenv("OPENAI_API_KEY", "")),
-        gemini_model=MODELS["gemini"].model_name,
-        openai_model=MODELS["openai"].model_name,
-        providers={name: model.available for name, model in MODELS.items()},
-    )
-
-
-@app.post("/api/settings")
-def save_settings() -> tuple[Response, int] | Response:
-    if (refusal := _key_guard()) is not None:
-        return refusal
-
-    data: dict[str, Any] = request.get_json(silent=True) or {}
-
-    updates = {
-        env_name: value
-        for field, env_name in ENV_FIELDS.items()
-        if (value := str(data.get(field, "")).strip())
-    }
-    if not updates:
-        return jsonify(error="Nothing to save — every field was blank."), 400
-
-    try:
-        update_env(updates, ENV_PATH)
-    except OSError as exc:
-        return jsonify(error=f"Could not write .env: {exc}"), 500
-
-    # Apply immediately so the user does not have to restart the server.
-    os.environ.update(updates)
-    reload_models()
-
-    return jsonify(
-        ok=True,
-        saved=sorted(updates),
-        providers={name: model.available for name, model in MODELS.items()},
-    )
-
-
 @app.post("/api/test-key")
 def test_key() -> tuple[Response, int] | Response:
-    """Make one tiny real call, so the user can confirm a key actually works."""
-    if (refusal := _key_guard()) is not None:
-        return refusal
-
+    """Make one tiny real call, so a visitor can confirm their key works."""
     data: dict[str, Any] = request.get_json(silent=True) or {}
     provider = str(data.get("provider", DEFAULT_PROVIDER))
 
-    model = MODELS.get(provider)
-    if model is None:
+    if provider not in BUILDERS:
         return jsonify(error=f"Unknown provider '{provider}'."), 400
 
+    model = request_models()[provider]
     reply = model.generate("Reply with the single word: OK")
     if reply["error"]:
         return jsonify(ok=False, error=reply["error"])

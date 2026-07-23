@@ -2,8 +2,6 @@
 
 Uses the current `google-genai` SDK. The older `google-generativeai`
 package is deprecated and its models return 404, so this is not optional.
-
-    pip install google-genai
 """
 
 import os
@@ -17,7 +15,6 @@ except ImportError:  # library not installed yet
     genai = None
 
 # Gemini model IDs change often and retired ones return a 404.
-# Override with GEMINI_MODEL in .env when this one is eventually replaced.
 DEFAULT_MODEL = "gemini-3.6-flash"
 
 
@@ -25,9 +22,12 @@ class GeminiModel(BaseModel):
     name = "gemini"
     label = "Gemini"
 
-    def __init__(self) -> None:
-        self.api_key: str = os.getenv("GEMINI_API_KEY", "").strip()
-        self.model_name: str = os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
+    def __init__(self, api_key: str = "", model_name: str = "") -> None:
+        # An explicit key wins; otherwise fall back to the server's own.
+        self.api_key: str = (api_key or os.getenv("GEMINI_API_KEY", "")).strip()
+        self.model_name: str = (
+            model_name or os.getenv("GEMINI_MODEL", "") or DEFAULT_MODEL
+        ).strip()
         self._client: Any = None
 
         if genai is not None and self.api_key:
@@ -44,7 +44,10 @@ class GeminiModel(BaseModel):
                 "Run: pip install google-genai"
             )
         if not self.available:
-            return self.fail("Gemini is not configured. Add GEMINI_API_KEY to .env.")
+            return self.fail(
+                "No Gemini key. Add one with the 'API keys' button — it is "
+                "stored in your browser only."
+            )
 
         try:
             response = self._client.models.generate_content(
@@ -53,14 +56,14 @@ class GeminiModel(BaseModel):
             )
         except Exception as exc:
             message = str(exc)
-            # A 404 nearly always means the model ID has been retired.
             if "404" in message or "not found" in message.lower():
                 return self.fail(
                     f"The model '{self.model_name}' was not found — Google has "
-                    "probably retired it. Set GEMINI_MODEL in your .env to a "
-                    "current one and restart the server. Current list: "
+                    "probably retired it. Pick a current one from "
                     "https://ai.google.dev/gemini-api/docs/models"
                 )
+            if "API key" in message or "401" in message or "403" in message:
+                return self.fail("Gemini rejected that key. Check it and try again.")
             return self.fail(f"Gemini request failed: {exc}")
 
         text = getattr(response, "text", "") or ""

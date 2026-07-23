@@ -157,8 +157,15 @@
   <form method="dialog" class="modal__inner" id="settingsForm">
     <h2 class="modal__title">API keys</h2>
     <p class="modal__note">
-      Saved to the <code>.env</code> file on this machine and applied straight
-      away — no restart needed. Leave a box blank to keep what is already there.
+      Your keys are stored <strong>in this browser only</strong> and never saved
+      on the server. Each visitor uses their own key and their own quota.
+      Leave a box blank to keep what is already saved.
+    </p>
+    <p class="modal__note modal__note--links">
+      Free Gemini key:
+      <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">Google AI Studio</a>
+      &middot; OpenAI key:
+      <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a>
     </p>
 
     <div class="field">
@@ -205,6 +212,8 @@
     <p class="modal__result" id="testResult" hidden></p>
 
     <div class="modal__actions">
+      <button type="button" class="link-btn" id="settingsForget">Forget my keys</button>
+      <span class="modal__spacer"></span>
       <button type="button" class="ghost-btn" id="settingsCancel">Cancel</button>
       <button type="button" class="send-btn" id="settingsSave">Save</button>
     </div>

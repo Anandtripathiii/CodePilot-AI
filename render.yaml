@@ -17,12 +17,13 @@ services:
         value: production
       - key: FLASK_DEBUG
         value: "0"
-      - key: ALLOW_KEY_EDITING
-        value: "0"
       - key: EMBED_BACKEND
         value: gemini
       - key: FLASK_SECRET_KEY
         generateValue: true
+      # Optional. Visitors normally bring their own key from the browser,
+      # so the server does not need one. Set these only if you want the app
+      # to work out of the box using your quota.
       - key: GEMINI_API_KEY
         sync: false
       - key: OPENAI_API_KEY
