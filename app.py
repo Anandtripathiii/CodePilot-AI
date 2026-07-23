@@ -74,6 +74,18 @@ def reload_models() -> None:
 
 reload_models()
 
+def gemini_key() -> str:
+    """The Gemini key for this request: the visitor's, else the server's.
+
+    Used by the file indexer, which embeds with Gemini regardless of which
+    chat model the visitor picked.
+    """
+    return (
+        request.headers.get("X-Gemini-Key", "").strip()
+        or os.getenv("GEMINI_API_KEY", "").strip()
+    )
+
+
 KEY_HEADERS: Final[dict[str, tuple[str, str]]] = {
     "gemini": ("X-Gemini-Key", "X-Gemini-Model"),
     "openai": ("X-OpenAI-Key", "X-OpenAI-Model"),
@@ -151,7 +163,7 @@ def chat() -> tuple[Response, int] | Response:
     sources: list[dict[str, str]] = []
 
     if use_rag and rag.has_index():
-        if hits := rag.search(message, k=4):
+        if hits := rag.search(message, k=4, api_key=gemini_key()):
             context_parts.append(rag.as_context(hits))
             sources += [{"kind": "file", "label": h["source"]} for h in hits]
 
@@ -249,7 +261,9 @@ def upload() -> tuple[Response, int] | Response:
         return jsonify(error="That file is empty or unreadable."), 400
 
     try:
-        chunks = rag.add_document(filename, text)
+        chunks = rag.add_document(filename, text, api_key=gemini_key())
+    except rag.MissingKey as exc:
+        return jsonify(error=str(exc)), 400
     except ModuleNotFoundError as exc:
         return jsonify(
             error=(

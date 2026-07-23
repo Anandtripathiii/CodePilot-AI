@@ -42,7 +42,6 @@ MIN_SCORE: Final[float] = 0.25       # cosine floor; below this a chunk is noise
 
 _lock = threading.Lock()
 _local_model: Any = None
-_gemini_client: Any = None
 _index: Any = None
 _meta: list[dict[str, Any]] = []
 
@@ -54,11 +53,14 @@ class Chunk(TypedDict):
 
 
 def backend() -> str:
-    """Which embedding backend is in play right now."""
-    choice = os.getenv("EMBED_BACKEND", "auto").strip().lower()
-    if choice in {"gemini", "local"}:
-        return choice
-    return "gemini" if os.getenv("GEMINI_API_KEY", "").strip() else "local"
+    """Which embedding backend this deployment uses.
+
+    Deliberately independent of who is asking. The vector dimension follows
+    from this, and a stored index cannot change dimension halfway through —
+    so it must not depend on which visitor happens to be uploading.
+    """
+    choice = os.getenv("EMBED_BACKEND", "gemini").strip().lower()
+    return "local" if choice == "local" else "gemini"
 
 
 def dimension() -> int:
@@ -99,18 +101,27 @@ def _normalise(vectors: np.ndarray) -> np.ndarray:
     return vectors / norms
 
 
-def _embed_gemini(texts: list[str], is_query: bool) -> np.ndarray:
+class MissingKey(RuntimeError):
+    """No Gemini key available to embed with. Raised with a message meant
+    to be shown to the person, not logged and swallowed."""
+
+
+def _embed_gemini(texts: list[str], is_query: bool, api_key: str = "") -> np.ndarray:
+    # Checked before the import so a missing key is reported as a missing
+    # key, rather than as whichever error happens to surface first.
+    key = (api_key or os.getenv("GEMINI_API_KEY", "")).strip()
+    if not key:
+        raise MissingKey(
+            "Indexing a file needs a Gemini key. Add one with the 'API keys' "
+            "button — it is used to turn your code into searchable vectors."
+        )
+
     from google import genai
     from google.genai import types
 
-    global _gemini_client
-    if _gemini_client is None:
-        key = os.getenv("GEMINI_API_KEY", "").strip()
-        if not key:
-            raise RuntimeError("GEMINI_API_KEY is needed for the gemini embedder.")
-        _gemini_client = genai.Client(api_key=key)
+    client = genai.Client(api_key=key)
 
-    response = _gemini_client.models.embed_content(
+    response = client.models.embed_content(
         model=GEMINI_EMBED_MODEL,
         contents=texts,
         config=types.EmbedContentConfig(
@@ -130,13 +141,15 @@ def _embed_local(texts: list[str]) -> np.ndarray:
     return np.asarray(_local_model.encode(texts), dtype="float32")
 
 
-def embed(texts: str | list[str], is_query: bool = False) -> np.ndarray:
+def embed(
+    texts: str | list[str], is_query: bool = False, api_key: str = ""
+) -> np.ndarray:
     """Return a float32 array of shape (n, dimension()), unit length."""
     if isinstance(texts, str):
         texts = [texts]
 
     if backend() == "gemini":
-        vectors = _embed_gemini(texts, is_query)
+        vectors = _embed_gemini(texts, is_query, api_key)
     else:
         vectors = _embed_local(texts)
 
@@ -183,7 +196,7 @@ def _save() -> None:
     META_PATH.write_text(json.dumps(_meta), encoding="utf-8")
 
 
-def add_document(filename: str, text: str) -> int:
+def add_document(filename: str, text: str, api_key: str = "") -> int:
     """Chunk, embed and store one file. Returns the number of chunks added."""
     with _lock:
         _load()
@@ -191,7 +204,7 @@ def add_document(filename: str, text: str) -> int:
         if not chunks:
             return 0
 
-        _index.add(embed(chunks))
+        _index.add(embed(chunks, api_key=api_key))
         _meta.extend({"text": c, "source": filename} for c in chunks)
         _save()
         return len(chunks)
@@ -236,14 +249,14 @@ def reset() -> None:
 # ==========================================================================
 # 4. Retrieval
 # ==========================================================================
-def search(question: str, k: int = 4) -> list[Chunk]:
+def search(question: str, k: int = 4, api_key: str = "") -> list[Chunk]:
     """The chunks most relevant to a question, weak matches dropped."""
     with _lock:
         _load()
         if _index.ntotal == 0:
             return []
 
-        vector = embed(question, is_query=True)
+        vector = embed(question, is_query=True, api_key=api_key)
         scores, ids = _index.search(vector, min(k, _index.ntotal))
 
     hits: list[Chunk] = []
