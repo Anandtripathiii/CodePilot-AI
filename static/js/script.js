@@ -1,30 +1,3 @@
-  API.health().then((data) => {
-    Settings.setServerProviders(data.providers);
-    Settings.refreshStamps();
-    Upload.renderFiles(data.indexed_files || []);
-
-    // Serverless hosts have no persistent disk, so say so rather than
-    // letting files quietly disappear between requests.
-    if (data.ephemeral) {
-      const note = document.createElement("p");
-      note.className = "ephemeral-note";
-      note.textContent =
-        "Uploaded files and history are temporary on this deployment and " +
-        "reset when the server sleeps.";
-      $("#dropzone").insertAdjacentElement("afterend", note);
-    }
-
-    // Nobody can use the app without a key somewhere, so ask up front.
-    const usable = Settings.providerState(data.providers);
-    if (!usable.gemini && !usable.openai) {
-      UI.toast("Add your API key to get started — it stays in this browser.");
-      Settings.open();
-    }
-  }).catch(() => {
-    UI.toast("Could not reach the server. Is it still running?", "warn");
-  });
-
-  UI.renderEmptyState(state.mode);
 /* =========================================================
    CodePilot AI — script.js
    One file. Sections, in order:
@@ -986,7 +959,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* --- startup: which providers are configured? --- */
   API.health().then((data) => {
-    UI.applyProviders(data.providers);
+    // The server may or may not carry its own key; the browser may or may
+    // not have one saved. Either counts as usable.
+    Settings.setServerProviders(data.providers);
+    Settings.refreshStamps();
     Upload.renderFiles(data.indexed_files || []);
 
     // Serverless hosts have no persistent disk, so say so rather than
@@ -1000,20 +976,14 @@ document.addEventListener("DOMContentLoaded", () => {
       $("#dropzone").insertAdjacentElement("afterend", note);
     }
 
-    // The button stays when key editing is on — protected by a password
-    // in production, unprotected only on localhost.
-    Settings.setAdminRequired(Boolean(data.admin_required));
-    if (data.key_editing === false) {
-      $("#settingsBtn").hidden = true;
-      return;
-    }
-
-    if (!Object.values(data.providers).some(Boolean)) {
-      UI.toast("No API key yet — add one with the 'API keys' button.", "warn");
+    // Nobody can use the app without a key somewhere, so ask up front.
+    const usable = Settings.providerState(data.providers);
+    if (!usable.gemini && !usable.openai) {
+      UI.toast("Add your API key to get started — it stays in this browser.");
       Settings.open();
     }
   }).catch(() => {
-    UI.toast("Could not reach the server. Is Flask still running?", "warn");
+    UI.toast("Could not reach the server. Is it still running?", "warn");
   });
 
   UI.renderEmptyState(state.mode);
