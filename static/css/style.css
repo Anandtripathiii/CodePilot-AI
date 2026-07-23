@@ -41,10 +41,10 @@
   --serif: "IBM Plex Serif", Georgia, serif;
   --mono:  "IBM Plex Mono", "SF Mono", Consolas, monospace;
 
-  --step-0: 0.9375rem;
-  --step-1: 1.0625rem;
-  --step-2: 1.375rem;
-  --step-3: 1.9rem;
+  --step-0: 0.875rem;
+  --step-1: 0.9375rem;
+  --step-2: 1.2rem;
+  --step-3: 1.6rem;
 
   /* geometry */
   --margin-x: 3.25rem;        /* where the red rule sits */
@@ -60,9 +60,13 @@
     text baseline. If the type floats a little high or low on your
     machine, this is the one number to nudge.
   */
-  --line-h:      28px;
-  --rule-offset: 21px;
-  --half-line:   14px;        /* --line-h / 2, for symmetric padding */
+  --line-h:      24px;
+  --rule-offset: 18px;
+  --half-line:   12px;        /* --line-h / 2, for symmetric padding */
+
+  /* Long lines are hard to read. On a wide monitor the conversation stops
+     here rather than running the full width of the screen. */
+  --measure: 52rem;
   --shadow: 0 1px 0 var(--paper-edge), 0 6px 14px rgba(34, 38, 45, 0.07);
 }
 
@@ -179,12 +183,12 @@ code, pre, kbd { font-family: var(--mono); }
 .desk {
   position: relative;
   display: grid;
-  grid-template-columns: 19rem minmax(0, 1fr);
+  grid-template-columns: 17.5rem minmax(0, 1fr);
   gap: 1.25rem;
   min-height: 0;                 /* lets children scroll instead of stretching */
-  padding: 1.1rem 1.25rem;
+  padding: 0.9rem 1.1rem;
   width: 100%;
-  max-width: 84rem;
+  max-width: 78rem;
   margin: 0 auto;
 }
 
@@ -581,6 +585,7 @@ code, pre, kbd { font-family: var(--mono); }
    ========================================================= */
 
 .empty { max-width: 34rem; }
+.compare { max-width: var(--measure); }
 
 /* The one line of red ink on the page, matching the margin rule. */
 /*
@@ -589,10 +594,10 @@ code, pre, kbd { font-family: var(--mono); }
   everything below stays in step.
 */
 .empty__lead {
-  font-size: 1.85rem;
+  font-size: 1.6rem;
   line-height: calc(var(--line-h) * 2);
-  padding-top: 9px;
-  margin-bottom: 19px;
+  padding-top: 8px;
+  margin-bottom: 16px;
   font-style: italic;
   color: var(--margin-red);
 }
@@ -620,7 +625,7 @@ code, pre, kbd { font-family: var(--mono); }
 .example:hover { box-shadow: inset 2px 0 0 var(--margin-red); }
 .example:hover { color: var(--ink); background: var(--highlight); }
 
-.msg { margin-bottom: var(--line-h); }
+.msg { margin-bottom: var(--line-h); max-width: var(--measure); }
 
 .msg__who {
   font-family: var(--mono);
@@ -978,7 +983,7 @@ code, pre, kbd { font-family: var(--mono); }
 
   .sheet__scroll { padding: 1rem 0.9rem 1rem calc(var(--margin-x) + 0.75rem); }
 
-  .empty__lead { font-size: 1.45rem; padding-top: 13px; margin-bottom: 15px; }
+  .empty__lead { font-size: 1.3rem; padding-top: 10px; margin-bottom: 14px; }
   .empty__body { font-size: var(--step-0); }
 
   .composer { padding: 0.6rem 0.7rem 0.7rem; }

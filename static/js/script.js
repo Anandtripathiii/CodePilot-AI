@@ -41,9 +41,16 @@ const API = (() => {
     return data;
   }
 
+  // Held in memory only, for this tab, for as long as the page is open.
+  let adminPassword = "";
+  const setAdminPassword = (value) => { adminPassword = value || ""; };
+
+  const headers = (extra = {}) =>
+    adminPassword ? { ...extra, "X-Admin-Password": adminPassword } : extra;
+
   const json = (body) => ({
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: headers({ "Content-Type": "application/json" }),
     body: JSON.stringify(body),
   });
 
@@ -57,11 +64,12 @@ const API = (() => {
       return request("/api/upload", { method: "POST", body: form });
     },
     clearIndex:   () => request("/api/clear-index", { method: "POST" }),
-    getSettings:  () => request("/api/settings"),
+    getSettings:  () => request("/api/settings", { headers: headers() }),
     saveSettings: (body) => request("/api/settings", json(body)),
     testKey:      (body) => request("/api/test-key", json(body)),
     history:      () => request("/api/history"),
     clearHistory: () => request("/api/history", { method: "DELETE" }),
+    setAdminPassword,
   };
 })();
 
@@ -681,7 +689,18 @@ const Settings = (() => {
 
   const dialog = () => $("#settingsModal");
 
+  let adminRequired = false;
+  const setAdminRequired = (value) => { adminRequired = value; };
+
   async function open() {
+    if (adminRequired) {
+      const entered = window.prompt(
+        "Admin password (set as ADMIN_PASSWORD on the host):"
+      );
+      if (entered === null) return;          // cancelled
+      API.setAdminPassword(entered);
+    }
+
     try {
       const data = await API.getSettings();
       $("#geminiModel").value = data.gemini_model || "";
@@ -694,6 +713,8 @@ const Settings = (() => {
         : "not set";
     } catch (err) {
       UI.toast(err.message, "warn");
+      if (adminRequired) API.setAdminPassword("");   // let them retry
+      return;
     }
 
     $("#geminiKey").value = "";
@@ -804,7 +825,7 @@ const Settings = (() => {
     });
   }
 
-  return { wire, open };
+  return { wire, open, setAdminRequired };
 })();
 
 
@@ -915,7 +936,9 @@ document.addEventListener("DOMContentLoaded", () => {
       $("#dropzone").insertAdjacentElement("afterend", note);
     }
 
-    // On a public deployment keys are set by the host, not the browser.
+    // The button stays when key editing is on — protected by a password
+    // in production, unprotected only on localhost.
+    Settings.setAdminRequired(Boolean(data.admin_required));
     if (data.key_editing === false) {
       $("#settingsBtn").hidden = true;
       return;

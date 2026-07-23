@@ -7,6 +7,7 @@ The real work lives in rag.py, agent.py, safety.py, utils.py and models/.
 """
 
 import os
+import secrets
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Final
@@ -52,9 +53,19 @@ MAX_UPLOAD_MB: Final[int] = 5
 # deliberately switch it on.
 #
 IS_PRODUCTION: Final[bool] = os.getenv("FLASK_ENV", "development") == "production"
-ALLOW_KEY_EDITING: Final[bool] = (
-    os.getenv("ALLOW_KEY_EDITING", "0" if IS_PRODUCTION else "1") == "1"
-)
+
+# Set ADMIN_PASSWORD to use the key editor on a live site. Without one the
+# editor stays shut in production, because an unprotected route that writes
+# .env would let any visitor take over your API keys.
+ADMIN_PASSWORD: Final[str] = os.getenv("ADMIN_PASSWORD", "").strip()
+
+ALLOW_KEY_EDITING: Final[bool] = os.getenv(
+    "ALLOW_KEY_EDITING",
+    "1" if (not IS_PRODUCTION or ADMIN_PASSWORD) else "0",
+) == "1"
+
+# Locally there is nothing to protect — only you can reach 127.0.0.1.
+REQUIRE_ADMIN: Final[bool] = IS_PRODUCTION and ALLOW_KEY_EDITING
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", "dev-secret")
@@ -105,6 +116,7 @@ def health() -> Response:
         index_ready=rag.has_index(),
         indexed_files=rag.list_files(),
         key_editing=ALLOW_KEY_EDITING,
+        admin_required=REQUIRE_ADMIN,
         ephemeral=IS_SERVERLESS,
     )
 
@@ -263,19 +275,29 @@ ENV_FIELDS: Final[dict[str, str]] = {
 }
 
 
-def _keys_locked() -> tuple[Response, int]:
-    return jsonify(
-        error=(
-            "Editing keys from the browser is disabled on this deployment. "
-            "Set them as environment variables on the host instead."
-        )
-    ), 403
+def _key_guard() -> tuple[Response, int] | None:
+    """None when the caller may edit keys, otherwise the refusal to send."""
+    if not ALLOW_KEY_EDITING:
+        return jsonify(
+            error=(
+                "Editing keys from the browser is switched off here. Set "
+                "ADMIN_PASSWORD on the host to turn it on."
+            )
+        ), 403
+
+    if REQUIRE_ADMIN:
+        given = request.headers.get("X-Admin-Password", "")
+        # compare_digest so a wrong guess takes the same time as a right one
+        if not (given and secrets.compare_digest(given, ADMIN_PASSWORD)):
+            return jsonify(error="Wrong admin password."), 401
+
+    return None
 
 
 @app.get("/api/settings")
 def get_settings() -> tuple[Response, int] | Response:
-    if not ALLOW_KEY_EDITING:
-        return _keys_locked()
+    if (refusal := _key_guard()) is not None:
+        return refusal
     """Current state. Keys come back masked — never in full."""
     return jsonify(
         gemini_key=mask_key(os.getenv("GEMINI_API_KEY", "")),
@@ -288,8 +310,8 @@ def get_settings() -> tuple[Response, int] | Response:
 
 @app.post("/api/settings")
 def save_settings() -> tuple[Response, int] | Response:
-    if not ALLOW_KEY_EDITING:
-        return _keys_locked()
+    if (refusal := _key_guard()) is not None:
+        return refusal
 
     data: dict[str, Any] = request.get_json(silent=True) or {}
 
@@ -320,8 +342,8 @@ def save_settings() -> tuple[Response, int] | Response:
 @app.post("/api/test-key")
 def test_key() -> tuple[Response, int] | Response:
     """Make one tiny real call, so the user can confirm a key actually works."""
-    if not ALLOW_KEY_EDITING:
-        return _keys_locked()
+    if (refusal := _key_guard()) is not None:
+        return refusal
 
     data: dict[str, Any] = request.get_json(silent=True) or {}
     provider = str(data.get("provider", DEFAULT_PROVIDER))
