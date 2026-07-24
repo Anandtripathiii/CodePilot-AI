@@ -7,12 +7,14 @@ The real work lives in rag.py, agent.py, safety.py, utils.py and models/.
 """
 
 import os
+import uuid
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Final
 
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, session
 from werkzeug.utils import secure_filename
 
 try:
@@ -115,7 +117,28 @@ def request_models() -> dict[str, BaseModel]:
             resolved[name] = MODELS[name]
     return resolved
 
-history = History(storage_dir("data") / "history.json")
+SESSION_DAYS: Final[int] = 30
+app.permanent_session_lifetime = timedelta(days=SESSION_DAYS)
+
+
+def session_id() -> str:
+    """A private id for this browser, kept in a signed cookie.
+
+    Everything a visitor stores — uploaded files, the search index, chat
+    history — is filed under this id, so no visitor can see another's.
+    The cookie is signed with FLASK_SECRET_KEY, so it cannot be forged to
+    read someone else's space.
+    """
+    sid = session.get("sid")
+    if not sid:
+        sid = uuid.uuid4().hex
+        session["sid"] = sid
+        session.permanent = True
+    return sid
+
+
+def history_for(sid: str) -> History:
+    return History(storage_dir("data") / sid / "history.json")
 
 
 # --------------------------------------------------------------------------
@@ -134,8 +157,8 @@ def health() -> Response:
     return jsonify(
         ok=True,
         providers={name: model.available for name, model in MODELS.items()},
-        index_ready=rag.has_index(),
-        indexed_files=rag.list_files(),
+        index_ready=rag.has_index(sid := session_id()),
+        indexed_files=rag.list_files(sid),
         ephemeral=IS_SERVERLESS,
     )
 
@@ -162,10 +185,15 @@ def chat() -> tuple[Response, int] | Response:
     context_parts: list[str] = []
     sources: list[dict[str, str]] = []
 
-    if use_rag and rag.has_index():
-        if hits := rag.search(message, k=4, api_key=gemini_key()):
+    sid = session_id()
+
+    if use_rag and rag.has_index(sid):
+        if hits := rag.search(sid, message, k=4, api_key=gemini_key()):
             context_parts.append(rag.as_context(hits))
-            sources += [{"kind": "file", "label": h["source"]} for h in hits]
+            # Several chunks usually come from the same file. Credit the
+            # file once rather than once per chunk.
+            for name in dict.fromkeys(h["source"] for h in hits):
+                sources.append({"kind": "file", "label": name})
 
     if use_web:
         if results := search_docs(message, max_results=4):
@@ -187,7 +215,7 @@ def chat() -> tuple[Response, int] | Response:
         return jsonify(error=reply["error"]), 502
 
     answer = check_response(reply["text"])
-    history.add(
+    history_for(sid).add(
         {
             "id": new_id(),
             "mode": mode,
@@ -252,8 +280,13 @@ def upload() -> tuple[Response, int] | Response:
         allowed = ", ".join(sorted(ALLOWED_EXTENSIONS))
         return jsonify(error=f"Only these types work: {allowed}"), 400
 
+    sid = session_id()
     filename = secure_filename(file.filename)
-    path = UPLOAD_DIR / filename
+    # Uploads are filed per visitor too, so two people uploading the same
+    # filename cannot overwrite each other.
+    folder = UPLOAD_DIR / sid
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / filename
     file.save(path)
 
     text = read_text_file(path)
@@ -261,7 +294,7 @@ def upload() -> tuple[Response, int] | Response:
         return jsonify(error="That file is empty or unreadable."), 400
 
     try:
-        chunks = rag.add_document(filename, text, api_key=gemini_key())
+        chunks = rag.add_document(sid, filename, text, api_key=gemini_key())
     except rag.MissingKey as exc:
         return jsonify(error=str(exc)), 400
     except ModuleNotFoundError as exc:
@@ -274,12 +307,12 @@ def upload() -> tuple[Response, int] | Response:
     except Exception as exc:
         return jsonify(error=f"Could not index that file: {exc}"), 500
 
-    return jsonify(filename=filename, chunks=chunks, indexed_files=rag.list_files())
+    return jsonify(filename=filename, chunks=chunks, indexed_files=rag.list_files(sid))
 
 
 @app.post("/api/clear-index")
 def clear_index() -> Response:
-    rag.reset()
+    rag.reset(session_id())
     return jsonify(ok=True, indexed_files=[])
 
 
@@ -312,12 +345,12 @@ def test_key() -> tuple[Response, int] | Response:
 # --------------------------------------------------------------------------
 @app.get("/api/history")
 def get_history() -> Response:
-    return jsonify(items=history.all())
+    return jsonify(items=history_for(session_id()).all())
 
 
 @app.delete("/api/history")
 def clear_history() -> Response:
-    history.clear()
+    history_for(session_id()).clear()
     return jsonify(ok=True)
 
 

@@ -30,8 +30,6 @@ from utils import storage_dir
 
 BASE_DIR: Final[Path] = Path(__file__).resolve().parent
 DATA_DIR: Final[Path] = storage_dir("data")
-INDEX_PATH: Final[Path] = DATA_DIR / "faiss.index"
-META_PATH: Final[Path] = DATA_DIR / "chunks.json"
 
 GEMINI_EMBED_MODEL: Final[str] = os.getenv("GEMINI_EMBED_MODEL", "gemini-embedding-001")
 GEMINI_DIM: Final[int] = int(os.getenv("EMBED_DIM", "768"))
@@ -42,8 +40,17 @@ MIN_SCORE: Final[float] = 0.25       # cosine floor; below this a chunk is noise
 
 _lock = threading.Lock()
 _local_model: Any = None
-_index: Any = None
-_meta: list[dict[str, Any]] = []
+
+# One index per visitor. Without this, every visitor would read and write
+# the same vectors — meaning anyone could search anyone else's uploads.
+# The key is the session id; the value is that visitor's loaded state.
+_spaces: dict[str, dict[str, Any]] = {}
+
+
+def _paths(space: str) -> tuple[Path, Path]:
+    folder = DATA_DIR / space
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / "faiss.index", folder / "chunks.json"
 
 
 class Chunk(TypedDict):
@@ -165,105 +172,121 @@ def _faiss() -> Any:
     return faiss
 
 
-def _load() -> None:
-    """Read the index from disk, or start an empty one.
+def _disk_mtime(index_path: Path) -> float:
+    """When this visitor's index last changed, or -1 if there is none."""
+    try:
+        return index_path.stat().st_mtime
+    except OSError:
+        return -1.0
 
-    If the stored index was built with a different embedder its vectors are
-    meaningless to the current one, so it is discarded rather than mixed.
+
+def _load(space: str) -> dict[str, Any]:
+    """This visitor's index, reloaded from disk if it has changed.
+
+    The web server runs several worker processes, each with its own memory.
+    An upload handled by one worker is invisible to the others unless they
+    notice the file changed, so the timestamp is checked on every call. A
+    stat is cheap; workers disagreeing about which files exist is not.
+
+    An index built by a different embedder holds vectors the current one
+    cannot read, so it is discarded rather than mixed.
     """
-    global _index, _meta
-    if _index is not None:
-        return
+    index_path, meta_path = _paths(space)
+    state = _spaces.get(space)
+    mtime = _disk_mtime(index_path)
+
+    if state is not None and state["mtime"] == mtime:
+        return state
 
     faiss = _faiss()
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
     want = dimension()
 
-    if INDEX_PATH.exists() and META_PATH.exists():
-        stored = faiss.read_index(str(INDEX_PATH))
+    if mtime >= 0 and meta_path.exists():
+        stored = faiss.read_index(str(index_path))
         if stored.d == want:
-            _index = stored
-            _meta = json.loads(META_PATH.read_text(encoding="utf-8"))
-            return
+            state = {
+                "index": stored,
+                "meta": json.loads(meta_path.read_text(encoding="utf-8")),
+                "mtime": mtime,
+            }
+            _spaces[space] = state
+            return state
 
-    _index = faiss.IndexFlatIP(want)
-    _meta = []
+    state = {"index": faiss.IndexFlatIP(want), "meta": [], "mtime": mtime}
+    _spaces[space] = state
+    return state
 
 
-def _save() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    _faiss().write_index(_index, str(INDEX_PATH))
-    META_PATH.write_text(json.dumps(_meta), encoding="utf-8")
+def _save(space: str, state: dict[str, Any]) -> None:
+    index_path, meta_path = _paths(space)
+    # Metadata first: a worker reloading mid-write should never find a new
+    # index pointing at old metadata.
+    meta_path.write_text(json.dumps(state["meta"]), encoding="utf-8")
+    _faiss().write_index(state["index"], str(index_path))
+    state["mtime"] = _disk_mtime(index_path)
 
 
-def add_document(filename: str, text: str, api_key: str = "") -> int:
+def add_document(space: str, filename: str, text: str, api_key: str = "") -> int:
     """Chunk, embed and store one file. Returns the number of chunks added."""
     with _lock:
-        _load()
+        state = _load(space)
         chunks = split_text(text)
         if not chunks:
             return 0
 
-        _index.add(embed(chunks, api_key=api_key))
-        _meta.extend({"text": c, "source": filename} for c in chunks)
-        _save()
+        state["index"].add(embed(chunks, api_key=api_key))
+        state["meta"].extend({"text": c, "source": filename} for c in chunks)
+        _save(space, state)
         return len(chunks)
 
 
-def has_index() -> bool:
+def has_index(space: str) -> bool:
     """False — rather than a crash — if FAISS is missing or nothing is stored."""
     try:
-        _load()
+        return _load(space)["index"].ntotal > 0
     except Exception:
         return False
-    return _index.ntotal > 0
 
 
-def list_files() -> list[str]:
-    """Every filename currently in the index, in the order added."""
+def list_files(space: str) -> list[str]:
+    """Every filename in this visitor's index, in the order added."""
     try:
-        _load()
+        meta = _load(space)["meta"]
     except Exception:
         return []
-
-    seen: list[str] = []
-    for item in _meta:
-        if item["source"] not in seen:
-            seen.append(item["source"])
-    return seen
+    return list(dict.fromkeys(item["source"] for item in meta))
 
 
-def reset() -> None:
-    """Wipe everything — used by the 'Clear all files' button."""
-    global _index, _meta
+def reset(space: str) -> None:
+    """Wipe this visitor's index — used by the 'Clear all files' button."""
     with _lock:
-        _meta = []
-        try:
-            _index = _faiss().IndexFlatIP(dimension())
-        except ImportError:
-            _index = None
-        for path in (INDEX_PATH, META_PATH):
+        _spaces.pop(space, None)
+        for path in _paths(space):
             path.unlink(missing_ok=True)
 
 
 # ==========================================================================
 # 4. Retrieval
 # ==========================================================================
-def search(question: str, k: int = 4, api_key: str = "") -> list[Chunk]:
+def search(
+    space: str, question: str, k: int = 4, api_key: str = ""
+) -> list[Chunk]:
     """The chunks most relevant to a question, weak matches dropped."""
     with _lock:
-        _load()
-        if _index.ntotal == 0:
+        state = _load(space)
+        index = state["index"]
+        if index.ntotal == 0:
             return []
 
         vector = embed(question, is_query=True, api_key=api_key)
-        scores, ids = _index.search(vector, min(k, _index.ntotal))
+        scores, ids = index.search(vector, min(k, index.ntotal))
+        meta = state["meta"]
 
     hits: list[Chunk] = []
     for score, idx in zip(scores[0], ids[0], strict=True):
         if idx == -1 or float(score) < MIN_SCORE:
             continue
-        item = _meta[int(idx)]
+        item = meta[int(idx)]
         hits.append(Chunk(text=item["text"], source=item["source"], score=float(score)))
     return hits
 
